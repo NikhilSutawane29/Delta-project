@@ -38,9 +38,8 @@ main()
   });
 async function main() {
   await mongoose.connect(dbUrl, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
     ssl: true,
+    tls: true,
     tlsAllowInvalidCertificates: true,
     tlsAllowInvalidHostnames: true,
     retryWrites: true
@@ -68,9 +67,8 @@ const store = MongoStore.create({
   },
   touchAfter: 24 * 3600, // time in seconds
   mongoOptions: {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
     ssl: true,
+    tls: true,
     tlsAllowInvalidCertificates: true,
     tlsAllowInvalidHostnames: true
   }
@@ -178,16 +176,40 @@ app.get("/testlisting", async (req, res) => {
 });
 */
 
+// Add a basic route for status checking
+app.get("/status", (req, res) => {
+  res.send("The server is running!");
+});
+
+// Root route to redirect to listings
+app.get("/", (req, res) => {
+  console.log("Root route accessed");
+  res.redirect("/listings");
+});
+
 // we throw an error for any unhandled routes
 app.all("*", (req, res, next) => {
+  console.log(`Route not found: ${req.originalUrl}`);
   next(new ExpressError(404, "Page Not Found"));
 });
 
 // here we catch all errors
 app.use((err, req, res, next) => {
+  console.error("ERROR:", err.stack || err);
   let { statusCode = 500, message = "Something went wrong" } = err;
-  res.status(statusCode).render("error.ejs", { err });
-  // res.status(statusCode).send(message);
+  
+  // In development, show detailed error information
+  if (process.env.NODE_ENV !== "production") {
+    return res.status(statusCode).render("error.ejs", { err });
+  }
+  
+  // In production, show a simpler error page
+  res.status(statusCode).render("error.ejs", { 
+    err: { 
+      message: "Something went wrong on our servers. We're working on it!",
+      statusCode: 500
+    } 
+  });
 });
 
 const port = process.env.PORT || 8080;
