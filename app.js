@@ -37,13 +37,22 @@ main()
     console.error("Error connecting to MongoDB:", err);
   });
 async function main() {
-  await mongoose.connect(dbUrl, {
-    ssl: true,
-    tls: true,
-    tlsAllowInvalidCertificates: true,
-    tlsAllowInvalidHostnames: true,
-    retryWrites: true
-  });
+  try {
+    console.log("Attempting to connect to MongoDB...");
+    await mongoose.connect(dbUrl, {
+      ssl: true,
+      tls: true,
+      tlsAllowInvalidCertificates: true,
+      tlsAllowInvalidHostnames: true,
+      retryWrites: true,
+      useNewUrlParser: true,
+      useUnifiedTopology: true
+    });
+    console.log("MongoDB connection successful");
+  } catch (err) {
+    console.error("MongoDB connection error:", err);
+    throw err; // Re-throw to be caught by the .catch() above
+  }
 }
 
 // Set the view engine to EJS
@@ -146,15 +155,35 @@ app.get("/demouser", async (req, res) => {
  
 
 
-// Use listings routes
-app.use("/listings", listingRouter); // Use the listings routes for any route starting with /listings
+// Use listings routes with error handling
+app.use("/listings", function(req, res, next) {
+  try {
+    listingRouter(req, res, next);
+  } catch (error) {
+    console.error("Error in listings router:", error);
+    next(error);
+  }
+});
 
+// Reviews Routes with error handling
+app.use("/listings/:id/reviews", function(req, res, next) {
+  try {
+    reviewRouter(req, res, next);
+  } catch (error) {
+    console.error("Error in reviews router:", error);
+    next(error);
+  }
+});
 
-// Reviews Routes
-app.use("/listings/:id/reviews", reviewRouter);
-
-// User Routes
-app.use("/", userRouter);
+// User Routes with error handling
+app.use("/", function(req, res, next) {
+  try {
+    userRouter(req, res, next);
+  } catch (error) {
+    console.error("Error in user router:", error);
+    next(error);
+  }
+});
 
 
  
@@ -176,40 +205,76 @@ app.get("/testlisting", async (req, res) => {
 });
 */
 
-// Add a basic route for status checking
+// Root route to return simple text instead of redirecting
+app.get("/", (req, res) => {
+  try {
+    console.log("Root route accessed");
+    res.send("Wanderlust application is running. Go to /listings to see the listings.");
+  } catch (error) {
+    console.error("Error in root route:", error);
+    res.status(500).send("An error occurred in the root route");
+  }
+});
+
+// Health check route for monitoring
+app.get("/health", (req, res) => {
+  try {
+    res.status(200).json({
+      status: "ok",
+      message: "Server is healthy",
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  } catch (error) {
+    console.error("Error in health check route:", error);
+    res.status(500).json({ status: "error", message: "Health check failed" });
+  }
+});
+
+// Status check route (simpler version)
 app.get("/status", (req, res) => {
   res.send("The server is running!");
 });
 
-// Root route to redirect to listings
-app.get("/", (req, res) => {
-  console.log("Root route accessed");
-  res.redirect("/listings");
-});
-
 // we throw an error for any unhandled routes
 app.all("*", (req, res, next) => {
-  console.log(`Route not found: ${req.originalUrl}`);
-  next(new ExpressError(404, "Page Not Found"));
+  try {
+    console.log(`Route not found: ${req.originalUrl}`);
+    next(new ExpressError(404, "Page Not Found"));
+  } catch (error) {
+    console.error("Error in catch-all route:", error);
+    res.status(500).send("An error occurred processing your request");
+  }
 });
 
 // here we catch all errors
 app.use((err, req, res, next) => {
-  console.error("ERROR:", err.stack || err);
-  let { statusCode = 500, message = "Something went wrong" } = err;
+  console.error("ERROR:", err);
   
-  // In development, show detailed error information
-  if (process.env.NODE_ENV !== "production") {
-    return res.status(statusCode).render("error.ejs", { err });
+  // Log detailed error information
+  if (err.stack) {
+    console.error("Stack trace:", err.stack);
   }
   
-  // In production, show a simpler error page
-  res.status(statusCode).render("error.ejs", { 
-    err: { 
-      message: "Something went wrong on our servers. We're working on it!",
-      statusCode: 500
-    } 
-  });
+  if (err.name === "ValidationError") {
+    console.error("Validation error details:", err.errors);
+  }
+  
+  let { statusCode = 500, message = "Something went wrong" } = err;
+  
+  // Try to render the error page with a simple error object
+  try {
+    res.status(statusCode).render("error.ejs", { 
+      err: { 
+        message: message,
+        statusCode: statusCode
+      } 
+    });
+  } catch (renderError) {
+    // If rendering fails, send a simple text response or redirect to static error page
+    console.error("Error while rendering error page:", renderError);
+    res.status(statusCode).redirect("/error.html");
+  }
 });
 
 const port = process.env.PORT || 8080;
