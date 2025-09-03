@@ -37,7 +37,14 @@ main()
     console.error("Error connecting to MongoDB:", err);
   });
 async function main() {
-  await mongoose.connect(dbUrl);
+  await mongoose.connect(dbUrl, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    ssl: true,
+    tlsAllowInvalidCertificates: true,
+    tlsAllowInvalidHostnames: true,
+    retryWrites: true
+  });
 }
 
 // Set the view engine to EJS
@@ -57,9 +64,16 @@ app.use(express.static(path.join(__dirname, "public"))); // Serve static files f
 const store = MongoStore.create({
   mongoUrl: dbUrl,
   crypto: {
-    secret: process.env.SECRET,  // the use of this line is to encrypt the session data, means that even if someone gets access to the session store, they won't be able to read the session data without the secret
+    secret: process.env.SECRET || "your_secret_key",  // the use of this line is to encrypt the session data, means that even if someone gets access to the session store, they won't be able to read the session data without the secret
   },
   touchAfter: 24 * 3600, // time in seconds
+  mongoOptions: {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    ssl: true,
+    tlsAllowInvalidCertificates: true,
+    tlsAllowInvalidHostnames: true
+  }
 });
 
   
@@ -72,12 +86,11 @@ store.on("error", (err) => {
 // Session middleware
 const sessionOptions = {
   store,
-  secret: process.env.SECRET,
+  secret: process.env.SECRET || "your_secret_key",
   resave: false,  // don't save session if unmodified
-  saveUninitialized: true,  // create session even if not modified
+  saveUninitialized: false,  // don't create session until something stored
   cookie: {
     expires: Date.now() + 7 * 24 * 60 * 60 * 1000,  // 7 days milliseconds -> 7 * 24 * 60 * 60 * 1000 and we add that with the current time
-
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
     httpOnly: true, // cookie cannot be accessed via client-side scripts
   },
@@ -177,6 +190,7 @@ app.use((err, req, res, next) => {
   // res.status(statusCode).send(message);
 });
 
-app.listen(8080, () => {
-  console.log("Server is running on port 8080");
+const port = process.env.PORT || 8080;
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
