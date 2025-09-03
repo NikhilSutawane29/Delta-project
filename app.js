@@ -29,24 +29,26 @@ const User = require("./models/user.js");
 // const MONGO_URL = "mongodb://127.0.0.1:27017/wanderlust";
 const dbUrl = process.env.ATLASDB_URL;
 
+// Set a flag to track database connection status
+let dbConnected = false;
+
 main()
   .then(() => {
     console.log("Connected to MongoDB");
+    dbConnected = true;
   })
   .catch((err) => {
     console.error("Error connecting to MongoDB:", err);
+    // Continue running the app even if DB connection fails
   });
 async function main() {
   try {
     console.log("Attempting to connect to MongoDB...");
     await mongoose.connect(dbUrl, {
-      ssl: true,
-      tls: true,
-      tlsAllowInvalidCertificates: true,
-      tlsAllowInvalidHostnames: true,
-      retryWrites: true,
       useNewUrlParser: true,
-      useUnifiedTopology: true
+      useUnifiedTopology: true,
+      retryWrites: true,
+      serverSelectionTimeoutMS: 5000
     });
     console.log("MongoDB connection successful");
   } catch (err) {
@@ -76,10 +78,8 @@ const store = MongoStore.create({
   },
   touchAfter: 24 * 3600, // time in seconds
   mongoOptions: {
-    ssl: true,
-    tls: true,
-    tlsAllowInvalidCertificates: true,
-    tlsAllowInvalidHostnames: true
+    useNewUrlParser: true,
+    useUnifiedTopology: true
   }
 });
 
@@ -158,6 +158,10 @@ app.get("/demouser", async (req, res) => {
 // Use listings routes with error handling
 app.use("/listings", function(req, res, next) {
   try {
+    // Check database connection before proceeding to routes that need database
+    if (!dbConnected && req.method !== 'GET') {
+      throw new Error("Database connection is not available");
+    }
     listingRouter(req, res, next);
   } catch (error) {
     console.error("Error in listings router:", error);
@@ -223,11 +227,25 @@ app.get("/health", (req, res) => {
       status: "ok",
       message: "Server is healthy",
       timestamp: new Date().toISOString(),
-      uptime: process.uptime()
+      uptime: process.uptime(),
+      dbConnected: dbConnected
     });
   } catch (error) {
     console.error("Error in health check route:", error);
     res.status(500).json({ status: "error", message: "Health check failed" });
+  }
+});
+
+// Database status check
+app.get("/db-status", (req, res) => {
+  try {
+    res.status(200).json({
+      dbConnected: dbConnected,
+      message: dbConnected ? "Database connected" : "Database not connected"
+    });
+  } catch (error) {
+    console.error("Error in db-status route:", error);
+    res.status(500).json({ status: "error", message: "Status check failed" });
   }
 });
 
